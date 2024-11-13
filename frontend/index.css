@@ -34,3 +34,28 @@
 .price-down {
     color: #dc3545;
 }
+
+.update-info {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.update-counter {
+    display: inline-block;
+    margin-left: 20px;
+    padding: 2px 8px;
+    background-color: #e9ecef;
+    border-radius: 3px;
+}
+
+.flash {
+    animation: flash-animation 0.5s ease-out;
+}
+
+@keyframes flash-animation {
+    0% { background-color: #28a745; }
+    100% { background-color: transparent; }
+}
