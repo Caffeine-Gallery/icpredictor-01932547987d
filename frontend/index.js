@@ -8,11 +8,10 @@ let lastSuccessfulData = {
     'BTC': null
 };
 
-// Cache implementation
 const cache = {
     data: {},
     timestamp: {},
-    ttl: 10000, // 10 seconds cache
+    ttl: 5000, // Reduced to 5 seconds
 
     set(key, value) {
         this.data[key] = value;
@@ -31,7 +30,12 @@ const cache = {
 async function fetchWithRetry(url, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
-            const response = await fetch(url);
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -49,22 +53,24 @@ async function fetchCryptoPrice(coin) {
     const cacheKey = `price_${coinId}`;
     const cachedData = cache.get(cacheKey);
     
-    if (cachedData) {
+    if (cachedData && cachedData.isReal) {
         return cachedData;
     }
 
     try {
         const data = await fetchWithRetry(
-            `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true`
+            `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false`
         );
 
-        if (!data[coinId]) {
+        if (!data.market_data || typeof data.market_data.current_price.usd !== 'number') {
             throw new Error('Invalid API response format');
         }
 
         const result = {
-            price: data[coinId].usd,
-            change24h: data[coinId].usd_24h_change
+            price: data.market_data.current_price.usd,
+            change24h: data.market_data.price_change_percentage_24h,
+            isReal: true,
+            lastUpdated: data.market_data.last_updated
         };
 
         cache.set(cacheKey, result);
@@ -72,33 +78,12 @@ async function fetchCryptoPrice(coin) {
         return result;
     } catch (error) {
         console.error(`Error fetching ${coin} price:`, error);
-        return lastSuccessfulData[coin] || getFallbackData(coin);
-    }
-}
-
-function getFallbackData(coin) {
-    // Fallback data when API fails
-    return {
-        price: coin === 'ICP' ? 5.50 : 35000.00,
-        change24h: 0.00
-    };
-}
-
-async function updateUI() {
-    try {
-        await Promise.all([updateCoinData('ICP'), updateCoinData('BTC')]);
-        await updateChart(currentCoin);
-        await updateHistory(currentCoin);
-        
-        updateCount++;
-        document.getElementById('updateCounter').textContent = updateCount;
-        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-        
-        const updateInfo = document.querySelector('.update-info');
-        updateInfo.classList.add('flash');
-        setTimeout(() => updateInfo.classList.remove('flash'), 500);
-    } catch (error) {
-        console.error('Error in updateUI:', error);
+        return lastSuccessfulData[coin] || {
+            price: 0,
+            change24h: 0,
+            isReal: false,
+            lastUpdated: null
+        };
     }
 }
 
@@ -113,15 +98,41 @@ async function updateCoinData(coin) {
         const priceData = await fetchCryptoPrice(coin);
         const recommendation = await backend.getTradeRecommendation(coin, priceData.price, priceData.change24h);
         
-        priceElement.textContent = `$${priceData.price.toFixed(2)} (${priceData.change24h.toFixed(2)}%)`;
-        priceElement.className = priceData === lastSuccessfulData[coin] ? '' : 'text-warning';
+        if (!priceData.isReal) {
+            throw new Error('Unable to fetch real-time data');
+        }
+
+        const formattedPrice = new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(priceData.price);
+
+        const formattedChange = new Intl.NumberFormat('en-US', {
+            style: 'decimal',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+            signDisplay: 'always'
+        }).format(priceData.change24h);
+
+        priceElement.innerHTML = `
+            ${formattedPrice} <span class="${priceData.change24h >= 0 ? 'price-up' : 'price-down'}">
+                (${formattedChange}%)
+            </span>
+            <small class="d-block text-muted">
+                Last Updated: ${new Date(priceData.lastUpdated).toLocaleTimeString()}
+            </small>
+        `;
         
         recommendationElement.textContent = recommendation;
         recommendationElement.className = `recommendation-text ${recommendation.includes('BUY') ? 'buy-signal' : 'wait-signal'}`;
     } catch (error) {
         console.error(`Error updating ${coin} data:`, error);
-        priceElement.textContent = 'Temporarily unavailable';
-        priceElement.className = 'text-danger';
+        priceElement.innerHTML = `
+            <span class="text-danger">Price data unavailable</span>
+            <small class="d-block text-muted">Please try again later</small>
+        `;
         recommendationElement.textContent = 'Unable to generate recommendation';
         recommendationElement.className = 'recommendation-text text-danger';
     } finally {
@@ -131,65 +142,79 @@ async function updateCoinData(coin) {
 
 async function updateChart(coin) {
     const coinId = coin === 'ICP' ? 'internet-computer' : 'bitcoin';
-    const cacheKey = `chart_${coinId}`;
-    let chartData = cache.get(cacheKey);
+    try {
+        const response = await fetchWithRetry(
+            `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=30&interval=daily`
+        );
 
-    if (!chartData) {
-        try {
-            const response = await fetchWithRetry(
-                `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=30&interval=daily`
-            );
-            chartData = response.prices.map(price => ({
-                x: new Date(price[0]),
-                y: price[1]
-            }));
-            cache.set(cacheKey, chartData);
-        } catch (error) {
-            console.error('Error fetching chart data:', error);
-            chartData = generateFallbackChartData(coin);
+        if (!response.prices || !Array.isArray(response.prices)) {
+            throw new Error('Invalid chart data format');
         }
-    }
 
-    if (priceChart) {
-        priceChart.destroy();
-    }
+        const chartData = response.prices.map(price => ({
+            x: new Date(price[0]),
+            y: price[1]
+        }));
 
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    priceChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            datasets: [{
-                label: `${coin} Price (USD)`,
-                data: chartData,
-                borderColor: coin === 'ICP' ? 'rgb(75, 192, 192)' : 'rgb(247, 147, 26)',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                x: {
-                    type: 'time',
-                    time: {
-                        unit: 'day'
+        if (priceChart) {
+            priceChart.destroy();
+        }
+
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: `${coin} Price (USD)`,
+                    data: chartData,
+                    borderColor: coin === 'ICP' ? 'rgb(75, 192, 192)' : 'rgb(247, 147, 26)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            callback: function(value) {
+                                return new Intl.NumberFormat('en-US', {
+                                    style: 'currency',
+                                    currency: 'USD',
+                                    minimumFractionDigits: 2
+                                }).format(value);
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return new Intl.NumberFormat('en-US', {
+                                    style: 'currency',
+                                    currency: 'USD',
+                                    minimumFractionDigits: 2
+                                }).format(context.parsed.y);
+                            }
+                        }
                     }
                 }
             }
-        }
-    });
-}
-
-function generateFallbackChartData(coin) {
-    const basePrice = coin === 'ICP' ? 5.50 : 35000.00;
-    const data = [];
-    const now = Date.now();
-    for (let i = 30; i >= 0; i--) {
-        data.push({
-            x: new Date(now - i * 24 * 60 * 60 * 1000),
-            y: basePrice + (Math.random() - 0.5) * basePrice * 0.1
         });
+    } catch (error) {
+        console.error('Error updating chart:', error);
+        document.getElementById('priceChart').innerHTML = `
+            <div class="text-center text-danger p-3">
+                Chart data temporarily unavailable
+            </div>
+        `;
     }
-    return data;
 }
 
 // Event Listeners
@@ -219,8 +244,26 @@ document.getElementById('historyBtnBTC').addEventListener('click', function() {
     document.getElementById('historyBtnICP').classList.remove('active');
 });
 
+async function updateUI() {
+    try {
+        await Promise.all([updateCoinData('ICP'), updateCoinData('BTC')]);
+        await updateChart(currentCoin);
+        await updateHistory(currentCoin);
+        
+        updateCount++;
+        document.getElementById('updateCounter').textContent = updateCount;
+        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        
+        const updateInfo = document.querySelector('.update-info');
+        updateInfo.classList.add('flash');
+        setTimeout(() => updateInfo.classList.remove('flash'), 500);
+    } catch (error) {
+        console.error('Error in updateUI:', error);
+    }
+}
+
 // Initial update
 updateUI();
 
-// Update every 15 seconds to avoid rate limiting
+// Update every 15 seconds
 setInterval(updateUI, 15000);
