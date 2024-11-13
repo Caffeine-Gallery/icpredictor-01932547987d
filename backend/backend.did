@@ -1,0 +1,11 @@
+type Recommendation = 
+ record {
+   price: float64;
+   priceChange: float64;
+   recommendation: text;
+   timestamp: int;
+ };
+service : {
+  getRecommendationHistory: () -> (vec Recommendation) query;
+  getTradeRecommendation: (float64, float64) -> (text);
+}

@@ -1,0 +1,36 @@
+.recommendation-box {
+    padding: 20px;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+}
+
+.recommendation-text {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin: 0;
+}
+
+.buy-signal {
+    color: #28a745;
+}
+
+.wait-signal {
+    color: #dc3545;
+}
+
+.history-item {
+    padding: 10px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.price-up {
+    color: #28a745;
+}
+
+.price-down {
+    color: #dc3545;
+}
