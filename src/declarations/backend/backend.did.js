@@ -7,12 +7,12 @@ export const idlFactory = ({ IDL }) => {
   });
   return IDL.Service({
     'getRecommendationHistory' : IDL.Func(
-        [],
+        [IDL.Text],
         [IDL.Vec(Recommendation)],
         ['query'],
       ),
     'getTradeRecommendation' : IDL.Func(
-        [IDL.Float64, IDL.Float64],
+        [IDL.Text, IDL.Float64, IDL.Float64],
         [IDL.Text],
         [],
       ),

@@ -6,6 +6,6 @@ type Recommendation =
    timestamp: int;
  };
 service : {
-  getRecommendationHistory: () -> (vec Recommendation) query;
-  getTradeRecommendation: (float64, float64) -> (text);
+  getRecommendationHistory: (text) -> (vec Recommendation) query;
+  getTradeRecommendation: (text, float64, float64) -> (text);
 }

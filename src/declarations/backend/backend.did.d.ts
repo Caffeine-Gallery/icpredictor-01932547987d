@@ -9,8 +9,8 @@ export interface Recommendation {
   'priceChange' : number,
 }
 export interface _SERVICE {
-  'getRecommendationHistory' : ActorMethod<[], Array<Recommendation>>,
-  'getTradeRecommendation' : ActorMethod<[number, number], string>,
+  'getRecommendationHistory' : ActorMethod<[string], Array<Recommendation>>,
+  'getTradeRecommendation' : ActorMethod<[string, number, number], string>,
 }
 export declare const idlFactory: IDL.InterfaceFactory;
 export declare const init: (args: { IDL: typeof IDL }) => IDL.Type[];

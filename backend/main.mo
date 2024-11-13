@@ -1,5 +1,4 @@
 import Func "mo:base/Func";
-import Text "mo:base/Text";
 
 import Float "mo:base/Float";
 import Int "mo:base/Int";
@@ -7,6 +6,9 @@ import Array "mo:base/Array";
 import Buffer "mo:base/Buffer";
 import Time "mo:base/Time";
 import Debug "mo:base/Debug";
+import Text "mo:base/Text";
+import HashMap "mo:base/HashMap";
+import Hash "mo:base/Hash";
 
 actor {
     // Define the recommendation record type
@@ -17,22 +19,46 @@ actor {
         recommendation: Text;
     };
 
-    // Store historical recommendations
-    private let history = Buffer.Buffer<Recommendation>(0);
+    // Store historical recommendations for each coin
+    private let icpHistory = Buffer.Buffer<Recommendation>(0);
+    private let btcHistory = Buffer.Buffer<Recommendation>(0);
     private let maxHistorySize = 100;
 
     // Technical analysis parameters
-    private let buyThreshold : Float = -5.0; // Buy if price drops more than 5%
-    private let strongBuyThreshold : Float = -10.0; // Strong buy if price drops more than 10%
+    private let thresholds = HashMap.HashMap<Text, (Float, Float)>(2, Text.equal, Text.hash);
+    
+    // Initialize thresholds for each coin
+    private func initThresholds() {
+        thresholds.put("ICP", (-5.0, -10.0)); // (buyThreshold, strongBuyThreshold)
+        thresholds.put("BTC", (-3.0, -7.0));  // Bitcoin is typically less volatile
+    };
+    initThresholds();
+
+    // Function to get the appropriate history buffer
+    private func getHistoryBuffer(coin: Text) : Buffer.Buffer<Recommendation> {
+        switch(coin) {
+            case "BTC" { btcHistory };
+            case _ { icpHistory };
+        };
+    };
 
     // Function to generate trade recommendations
-    public func getTradeRecommendation(currentPrice: Float, priceChange24h: Float) : async Text {
+    public func getTradeRecommendation(coin: Text, currentPrice: Float, priceChange24h: Float) : async Text {
         var recommendation = "WAIT - Market conditions not favorable";
 
-        if (priceChange24h < strongBuyThreshold) {
-            recommendation := "STRONG BUY - Significant price drop detected";
-        } else if (priceChange24h < buyThreshold) {
-            recommendation := "BUY - Price showing weakness";
+        switch(thresholds.get(coin)) {
+            case (?thresholdValues) {
+                let (buyThreshold, strongBuyThreshold) = thresholdValues;
+                
+                if (priceChange24h < strongBuyThreshold) {
+                    recommendation := "STRONG BUY - Significant price drop detected";
+                } else if (priceChange24h < buyThreshold) {
+                    recommendation := "BUY - Price showing weakness";
+                };
+            };
+            case null {
+                recommendation := "ERROR - Invalid coin specified";
+            };
         };
 
         // Add to history
@@ -43,6 +69,7 @@ actor {
             recommendation = recommendation;
         };
 
+        let history = getHistoryBuffer(coin);
         if (history.size() >= maxHistorySize) {
             ignore history.removeLast();
         };
@@ -52,20 +79,25 @@ actor {
     };
 
     // Function to get recommendation history
-    public query func getRecommendationHistory() : async [Recommendation] {
-        Buffer.toArray(history)
+    public query func getRecommendationHistory(coin: Text) : async [Recommendation] {
+        Buffer.toArray(getHistoryBuffer(coin))
     };
 
     // System functions for upgrades
-    stable var stableHistory : [Recommendation] = [];
+    stable var stableICPHistory : [Recommendation] = [];
+    stable var stableBTCHistory : [Recommendation] = [];
 
     system func preupgrade() {
-        stableHistory := Buffer.toArray(history);
+        stableICPHistory := Buffer.toArray(icpHistory);
+        stableBTCHistory := Buffer.toArray(btcHistory);
     };
 
     system func postupgrade() {
-        for (recommendation in stableHistory.vals()) {
-            history.add(recommendation);
+        for (recommendation in stableICPHistory.vals()) {
+            icpHistory.add(recommendation);
+        };
+        for (recommendation in stableBTCHistory.vals()) {
+            btcHistory.add(recommendation);
         };
     };
 }
