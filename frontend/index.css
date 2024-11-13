@@ -59,3 +59,11 @@
     0% { background-color: #28a745; }
     100% { background-color: transparent; }
 }
+
+.text-warning {
+    color: #ffc107 !important;
+}
+
+.text-danger {
+    color: #dc3545 !important;
+}
